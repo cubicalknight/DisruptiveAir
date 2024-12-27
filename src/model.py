@@ -2,12 +2,13 @@
 import abc
 import json
 import pathlib
-
 import pandas as pd
 from matplotlib import pyplot as plt
 from datetime import datetime, timedelta, date, UTC
+
 from scheduling import Schedule
 from preprocess import airport_coords
+
 import logging
 import math
 import random
@@ -16,15 +17,15 @@ import plotly.graph_objects as go
 from dataclasses import dataclass
 import click
 
-VERSION = "1.1"
-
 
 # %%
 class Parameters:
     # minimum time between arriving at and departing from an airport
     min_turnaround = timedelta(minutes=35)
+
     # max delay before an aircraft agent gives up on a flight
     max_delay = timedelta(hours=6)
+
     # minimum time between flights for crew agents
     # TODO validate
     min_crew_turnaround = timedelta(minutes=30)
@@ -1183,18 +1184,19 @@ def run_model(visualize, crew_selection, disruption, ground_stop_scheme, track, 
             "ground_stop_scheme": ground_stop_scheme,
             "recovery": recovery,
             "crew_multiplier": crew_multiplier,
-            "VERSION": VERSION,
+            # "VERSION": VERSION,
             "generated_time": datetime.now().isoformat()
         }, meta_json)
 
 
 def test_crew_window_empty():
     c = Crew(1, 'DAL')
-    sch = Schedule('2022-12-24')
+    sch = Schedule('2023-01-10')
     flights = sch.schedule('N208WN')
     print(c.hours_remaining_after(flights.iloc[2], flights.iloc[0]['ScheduledDepTimeUTC'].to_pydatetime()))
 
 
 if __name__ == "__main__":
-    run_model()
-    # test_crew_window_empty()
+    # run_model()
+    test_crew_window_empty()
+# %%

@@ -97,15 +97,15 @@ class Schedule:
             'ScheduledDepTimeUTC',
             'ScheduledDepDateUTC',
             'ScheduledDepHourUTC',
-            'ScheduledDepTimePacific',
-            'ScheduledDepDatePacific',
-            'ScheduledDepHourPacific',
+            # 'ScheduledDepTimePacific',
+            # 'ScheduledDepDatePacific',
+            # 'ScheduledDepHourPacific',
             'ScheduledArrTimeUTC',
             'ScheduledArrDateUTC',
-            'ScheduledArrHourUTC',
-            'ScheduledArrTimePacific',
-            'ScheduledArrDatePacific',
-            'ScheduledArrHourPacific'
+            'ScheduledArrHourUTC'
+            # 'ScheduledArrTimePacific',
+            # 'ScheduledArrDatePacific',
+            # 'ScheduledArrHourPacific'
         ]]
         self.events["Revenue"] = True
         self.events = self.events[~self.events['Tail_Number'].isna()]
