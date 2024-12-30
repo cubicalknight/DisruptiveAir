@@ -51,7 +51,7 @@ class Schedule:
             'DivActualElapsedTime',
             'DivArrDelay',
             'DivDistance',
-            # NOTE diversions are not supported in this ABM
+            # NOTE: diversions are not supported in this ABM
             # 'Div1Airport',
             # 'Div1AirportID',
             # 'Div1AirportSeqID',
@@ -93,19 +93,15 @@ class Schedule:
             # 'Div5WheelsOff',
             # 'Div5TailNum',
             'OriginTimezone',
+            'OriginTimezoneName',
             'DestTimezone',
+            'DestTimezoneName',
             'ScheduledDepTimeUTC',
             'ScheduledDepDateUTC',
             'ScheduledDepHourUTC',
-            # 'ScheduledDepTimePacific',
-            # 'ScheduledDepDatePacific',
-            # 'ScheduledDepHourPacific',
             'ScheduledArrTimeUTC',
             'ScheduledArrDateUTC',
             'ScheduledArrHourUTC'
-            # 'ScheduledArrTimePacific',
-            # 'ScheduledArrDatePacific',
-            # 'ScheduledArrHourPacific'
         ]]
         self.events["Revenue"] = True
         self.events = self.events[~self.events['Tail_Number'].isna()]

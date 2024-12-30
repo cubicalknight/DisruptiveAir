@@ -60,8 +60,7 @@ class Airport:
         self.arrival_rate = {}
         self.departure_rate = {}
         self.metric_cancellations = 0
-        self.ground_stop = []
-        # per hour
+        self.ground_stop = [] # per hour
         self.arrival_capacity = arr_capacity
         self.departure_capacity = dep_capacity
         network.all_airports[code] = self
@@ -891,8 +890,10 @@ class Network:
 
 
     def _setup_report(self, report_name: str) -> None:
-        self.report_dir = pathlib.Path("reports") / report_name
+        base_dir = pathlib.Path(__file__).resolve().parent.parent
+        self.report_dir = base_dir / "reports" / report_name
         self.report_dir.mkdir(parents=True, exist_ok=True)
+
         self.report_log = self.report_dir / "network.log"
         self.report_metrics = self.report_dir / "metrics.csv"
         self.report_throughput = self.report_dir / "throughput.csv"
@@ -1125,20 +1126,21 @@ ground_stop_schemes = {
     ]}
 }
 
-@click.command()
-@click.option('--visualize', '-p', help='Export frame images from the simulation', is_flag=True, default=False)
-@click.option('--crew-selection', '-c', help='The crew selection strategy', type=click.Choice(['random', 'greedy_utilization']), default='random')
-@click.option('--disruption', '-i', required=True, help='The disruption model', type=click.Choice(['none', 'ground_stop', 'actual']))
-@click.option('--ground-stop-scheme', '-g', required=False, default='DEN-Beginning')
-@click.option('--track', '-t', help='The list of airports to track the number of cancellations and export the traffic rates', required=False)
-@click.option('--recovery', '-r', required=True, help='The recovery model', type=click.Choice(['none', 'greedy', 'lp', 'annealing']))
-@click.option('--date', '-d', required=True, help='The date to simulate')
-@click.option('--crew-multiplier', required=False, help='The multiplier applied to the initial crew count at all airports', type=float, default=1.0)
-@click.option('--max-delay', required=False, help='The maximum minutes of delay an uncancelled flight may have. Exceeding this number of minutes automatically cancels the flight.', type=int, default=360)
-@click.option('--verbose', '-v', count=True, default=0)
+# @click.command()
+# @click.option('--visualize', '-p', help='Export frame images from the simulation', is_flag=True, default=False)
+# @click.option('--crew-selection', '-c', help='The crew selection strategy', type=click.Choice(['random', 'greedy_utilization']), default='random')
+# @click.option('--disruption', '-i', required=True, help='The disruption model', type=click.Choice(['none', 'ground_stop', 'actual']))
+# @click.option('--ground-stop-scheme', '-g', required=False, default='DEN-Beginning')
+# @click.option('--track', '-t', help='The list of airports to track the number of cancellations and export the traffic rates', required=False)
+# @click.option('--recovery', '-r', required=True, help='The recovery model', type=click.Choice(['none', 'greedy', 'lp', 'annealing']))
+# @click.option('--date', '-d', required=True, help='The date to simulate')
+# @click.option('--crew-multiplier', required=False, help='The multiplier applied to the initial crew count at all airports', type=float, default=1.0)
+# @click.option('--max-delay', required=False, help='The maximum minutes of delay an uncancelled flight may have. Exceeding this number of minutes automatically cancels the flight.', type=int, default=360)
+# @click.option('--verbose', '-v', count=True, default=0)
+
 def run_model(visualize, crew_selection, disruption, ground_stop_scheme, track, recovery, date, crew_multiplier, max_delay, verbose):
     """Run the entire model according to the given options."""
-    config = f"{date}-{crew_selection}-{disruption}-{recovery}-{crew_multiplier}-{max_delay}_{VERSION}"
+    config = f"{date}-{crew_selection}-{disruption}-{recovery}-{crew_multiplier}-{max_delay}" #_{VERSION}"
     Airport.clearance_rule = disruption
     Airport.crew_selection_rule = crew_selection
     Dispatcher.recovery_strategy = recovery
@@ -1154,7 +1156,13 @@ def run_model(visualize, crew_selection, disruption, ground_stop_scheme, track, 
             net.all_airports[airport].ground_stop += constraint
 
     next_update_time = net.step()
-    for i in range(9000):
+
+    output_dir = pathlib.Path(f'../reports/{config}/plots')
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+
+    # Reduced the simulation time to 90 minutes for testing purposes
+    for i in range(90):
         if i % 10 == 0:
             net.record_metrics()
         net.time += timedelta(minutes=1)
@@ -1166,12 +1174,14 @@ def run_model(visualize, crew_selection, disruption, ground_stop_scheme, track, 
             #         "plot_bgcolor": "rgba(0, 0, 0, 0)",
             #     }
             # )
-            fig.write_image(f'plots/{config}-{i}.png', format='png', width=1000, height=800, scale=2)
+            fig.write_image(f'../reports/{config}/plots/{config}-{i}.png', format='png', width=1000, height=800, scale=2)
             # clear_output(wait=False)
             # fig.show()
         if net.time >= next_update_time:
             next_update_time = net.step()
-            net.recover()
+
+            # TODO: Remove recovery mechanism for system fail simulation
+            # net.recover()
         if net.updates.empty():
             break
 
@@ -1195,8 +1205,11 @@ def test_crew_window_empty():
     flights = sch.schedule('N208WN')
     print(c.hours_remaining_after(flights.iloc[2], flights.iloc[0]['ScheduledDepTimeUTC'].to_pydatetime()))
 
-
+# %%
+# Temporarily removed click CLI functionality for testing
+# python model.py -p -c greedy_utilization -i ground_stop -g DEN-Beginning -t LGA -r greedy -d 2023-01-10 -m 1.0 -x 360 -v 2
 if __name__ == "__main__":
-    # run_model()
-    test_crew_window_empty()
+    run_model(visualize=True, crew_selection='random', disruption='ground_stop', ground_stop_scheme='DEN-Beginning',
+                track='LGA', recovery='greedy', date='2023-01-10', crew_multiplier=1.0, max_delay=360, verbose=2)
+    # test_crew_window_empty()
 # %%

@@ -2,8 +2,9 @@
 import duckdb
 import pandas as pd
 
-# TODO: Timezonefinder is no longer needed - BTS data now includes timezone information
+# NOTE: Timezonefinder excluded for now, issues presented during import
 # import timezonefinder as tzf
+import airportsdata
 
 # Data for this comes from: https://www.transtats.bts.gov/DL_SelectFields.aspx?gnoyr_VQ=FLL&QO_fu146_anzr=N8vn6v10%20f722146%20gnoyr5
 airport_coords = (
@@ -16,7 +17,7 @@ airport_coords = (
 
 airport_coords["UTC_LOCAL_TIME_VARIATION"] = airport_coords.UTC_LOCAL_TIME_VARIATION.apply(lambda offset: offset / 100)
 
-# TODO: Update directory paths as needed
+# NOTE: Update directory paths as needed
 def prep_bts(start_date="2022-12-21", end_date="2022-12-30", table_name="flight_schedule", csv_path="../data/ot_reporting/On_Time_Reporting_Carrier_On_Time_Performance_(1987_present)_2023_1.csv"):
     with duckdb.connect("../data/duck.db") as db:
         db.execute(f"CREATE OR REPLACE TABLE {table_name} AS SELECT * FROM read_csv_auto('{csv_path}')")
@@ -29,35 +30,7 @@ def prep_bts(start_date="2022-12-21", end_date="2022-12-30", table_name="flight_
             """
         ).to_df()
 
-
-        # flights = db.query(
-        #     f"""
-        #     select * from {table_name} mess
-        #     left join (
-        #         select id, list(odc_level) as levels from southwest_odcs group by id
-        #     ) odcs on mess.column000 = odcs.id
-        #     where mess.FlightDate between date '{start_date}' and date '{end_date}' and
-        #     mess.column000 is not null"""
-        # ).to_df()
-        # finder = tzf.TimezoneFinder()
-
-    # TODO: Skip the use of timezonefinder and directly use the timezone data in the BTS data; make sure to correct by dividing by 100
-    # flights["OriginTimezone"] = flights["Origin"].map(
-    #     lambda origin: finder.timezone_at(
-    #         lng=airport_coords.LONGITUDE[origin], lat=airport_coords.LATITUDE[origin]
-    #     )
-    # )
-    # flights["DestTimezone"] = flights["Dest"].map(
-    #     lambda origin: finder.timezone_at(
-    #         lng=airport_coords.LONGITUDE[origin], lat=airport_coords.LATITUDE[origin]
-    #     )
-    # )
-    # flights["Div1Timezone"] = flights["Div1Airport"].map(
-    #     lambda div: None if div is None else finder.timezone_at(
-    #         lng=airport_coords.LONGITUDE[div], lat=airport_coords.LATITUDE[div]
-    #     )
-    # )
-
+    # NOTE: UTC offset mapping maintained for testing purposes
     flights["OriginTimezone"] = flights["Origin"].map(
         lambda origin: airport_coords.UTC_LOCAL_TIME_VARIATION[origin])
 
@@ -66,135 +39,155 @@ def prep_bts(start_date="2022-12-21", end_date="2022-12-30", table_name="flight_
     
     flights["Div1Timezone"] = flights["Div1Airport"].map(
         lambda div: None if div is None else airport_coords.UTC_LOCAL_TIME_VARIATION[div])
-
-    # TODO: As such these will need to be updated to handle the UTC offset directly from the data
-    # def dep_time_to_utc(row):
-    #     hour = row["CRSDepTime"] // 100
-    #     minute = row["CRSDepTime"] % 100
-    #     date = row["FlightDate"]
-    #     local_ts = pd.Timestamp(
-    #         year=date.year,
-    #         month=date.month,
-    #         day=date.day,
-    #         hour=hour,
-    #         minute=minute,
-    #         tz=row["OriginTimezone"],
-    #     )
-    #     return local_ts.tz_convert("UTC")
-
-    # def arr_time_to_utc(row):
-    #     hour = row["CRSArrTime"] // 100
-    #     minute = row["CRSArrTime"] % 100
-    #     # account for overnight flights
-    #     date = row["FlightDate"] + (pd.Timedelta(seconds=0) if row["CRSArrTime"] > row["CRSDepTime"] - 400 else pd.Timedelta(days=1))
-    #     local_ts = pd.Timestamp(
-    #         year=date.year,
-    #         month=date.month,
-    #         day=date.day,
-    #         hour=hour,
-    #         minute=minute,
-    #         tz=row["DestTimezone"],
-    #     )
-    #     return local_ts.tz_convert("UTC")
     
-    # def div1_arr_time_to_utc(row):
-    #     hour = row["Div1WheelsOn"] // 100
-    #     minute = row["Div1WheelsOn"] % 100
-    #     date = row["FlightDate"]
-    #     local_ts = pd.Timestamp(
-    #         year=date.year,
-    #         month=date.month,
-    #         day=date.day,
-    #         hour=hour,
-    #         minute=minute,
-    #         tz=row["DestTimezone"],
-    #     )
-    #     return local_ts.tz_convert("UTC")
+    airports = airportsdata.load('IATA')
+    flights["OriginTimezoneName"] = flights["Origin"].map(
+        lambda origin: airports[origin]['tz'])
+    
+    flights["DestTimezoneName"] = flights["Dest"].map(
+        lambda dest: airports[dest]['tz'])
+    
+    flights["Div1TimezoneName"] = flights["Div1Airport"].map(
+        lambda div: None if div is None else airports[div]['tz'])
 
     def dep_time_to_utc(row):
-        # Extract hour and minute from CRSDepTime
         hour = row["CRSDepTime"] // 100
         minute = row["CRSDepTime"] % 100
-
-        # Get the flight date
         date = row["FlightDate"]
-
-        # Compute UTC time directly using the UTC offset
-        utc_offset = row["OriginTimezone"]  # UTC offset in hours (e.g., -8.0 for PST)
         local_ts = pd.Timestamp(
             year=date.year,
             month=date.month,
             day=date.day,
             hour=hour,
-            minute=minute
+            minute=minute,
+            tz=row["OriginTimezoneName"],
         )
-        # Adjust the local time to UTC
-        utc_ts = local_ts - pd.Timedelta(hours=utc_offset)
-        return utc_ts
-    
+        return local_ts.tz_convert("UTC")
+
     def arr_time_to_utc(row):
         hour = row["CRSArrTime"] // 100
         minute = row["CRSArrTime"] % 100
+        
+        # account for overnight flights
+        date = row["FlightDate"] + (pd.Timedelta(seconds=0) if row["CRSArrTime"] > row["CRSDepTime"] - 400 else pd.Timedelta(days=1))
 
-        # Account for overnight flights
-        date = row["FlightDate"] + (
-            pd.Timedelta(seconds=0) if row["CRSArrTime"] > row["CRSDepTime"] - 400 else pd.Timedelta(days=1)
-        )
-
-        # Compute UTC time directly using the UTC offset
-        utc_offset = row["DestTimezone"]  # UTC offset in hours (e.g., -5.0 for EST)
         local_ts = pd.Timestamp(
             year=date.year,
             month=date.month,
             day=date.day,
             hour=hour,
-            minute=minute
+            minute=minute,
+            tz=row["DestTimezoneName"],
         )
-        # Adjust the local time to UTC
-        utc_ts = local_ts - pd.Timedelta(hours=utc_offset)
-        return utc_ts
 
+        # Handle date line crossing
+        # TODO: Verify with respect to extreme long haul flights that do not cross the dateline
+        #      (e.g., LAX to DXB or EWR to SIN - the latter of which can be rather complex) 
+        if abs(row["TZDifference"]) > 12:
+            if row["TZDifference"] > 0:
+                local_ts = local_ts + pd.Timedelta(days=1)
+            else:
+                local_ts = local_ts - pd.Timedelta(days=1)
+
+        return local_ts.tz_convert("UTC")
+    
     def div1_arr_time_to_utc(row):
         hour = row["Div1WheelsOn"] // 100
         minute = row["Div1WheelsOn"] % 100
-
         date = row["FlightDate"]
-
-        # Compute UTC time directly using the UTC offset
-        utc_offset = row["DestTimezone"]  # UTC offset in hours (e.g., -5.0 for EST)
         local_ts = pd.Timestamp(
             year=date.year,
             month=date.month,
             day=date.day,
             hour=hour,
-            minute=minute
+            minute=minute,
+            tz=row["DestTimezone"],
         )
-        # Adjust the local time to UTC
-        utc_ts = local_ts - pd.Timedelta(hours=utc_offset)
-        return utc_ts
+        return local_ts.tz_convert("UTC")
+
+    # def dep_time_to_utc(row):
+    #     # Extract hour and minute from CRSDepTime
+    #     hour = row["CRSDepTime"] // 100
+    #     minute = row["CRSDepTime"] % 100
+
+    #     # Get the flight date
+    #     date = row["FlightDate"]
+
+    #     # Compute UTC time directly using the UTC offset
+    #     utc_offset = row["OriginTimezone"]  # UTC offset in hours (e.g., -8.0 for PST)
+    #     local_ts = pd.Timestamp(
+    #         year=date.year,
+    #         month=date.month,
+    #         day=date.day,
+    #         hour=hour,
+    #         minute=minute
+    #     )
+    #     # Adjust the local time to UTC
+    #     utc_ts = local_ts - pd.Timedelta(hours=utc_offset)
+    #     return utc_ts
+    
+    # def arr_time_to_utc(row):
+    #     hour = row["CRSArrTime"] // 100
+    #     minute = row["CRSArrTime"] % 100
+
+    #     # Account for overnight flights
+    #     date = row["FlightDate"] + (
+    #         pd.Timedelta(seconds=0) if row["CRSArrTime"] > row["CRSDepTime"] - 400 else pd.Timedelta(days=1)
+    #     )
+
+    #     # Compute UTC time directly using the UTC offset
+    #     utc_offset = row["DestTimezone"]  # UTC offset in hours (e.g., -5.0 for EST)
+    #     local_ts = pd.Timestamp(
+    #         year=date.year,
+    #         month=date.month,
+    #         day=date.day,
+    #         hour=hour,
+    #         minute=minute
+    #     )
+
+    #     # Handle date line crossing
+    #     if abs(row["TZDifference"]) > 12:
+    #         if row["TZDifference"] > 0:
+    #             local_ts = local_ts + pd.Timedelta(days=1)
+    #         else:
+    #             local_ts = local_ts - pd.Timedelta(days=1)
+
+    #     # Adjust the local time to UTC
+    #     utc_ts = local_ts - pd.Timedelta(hours=utc_offset)
+    #     return utc_ts
+
+    # def div1_arr_time_to_utc(row):
+    #     hour = row["Div1WheelsOn"] // 100
+    #     minute = row["Div1WheelsOn"] % 100
+
+    #     date = row["FlightDate"]
+
+    #     # Compute UTC time directly using the UTC offset
+    #     utc_offset = row["DestTimezone"]  # UTC offset in hours (e.g., -5.0 for EST)
+    #     local_ts = pd.Timestamp(
+    #         year=date.year,
+    #         month=date.month,
+    #         day=date.day,
+    #         hour=hour,
+    #         minute=minute
+    #     )
+    #     # Adjust the local time to UTC
+    #     utc_ts = local_ts - pd.Timedelta(hours=utc_offset)
+    #     return utc_ts
 
     flights["CRSArrTime"] = flights["CRSArrTime"].fillna(0).astype(int)
     flights["CRSDepTime"] = flights["CRSDepTime"].fillna(0).astype(int)
     flights["Div1WheelsOn"] = flights["Div1WheelsOn"].fillna(0).astype(int)
 
+    flights["TZDifference"] = flights["DestTimezone"] - flights["OriginTimezone"]
+
     flights["ScheduledDepTimeUTC"] = flights.apply(dep_time_to_utc, axis=1)
     flights["ScheduledDepDateUTC"] = flights["ScheduledDepTimeUTC"].dt.date
     flights["ScheduledDepHourUTC"] = flights["ScheduledDepTimeUTC"].dt.hour
-    # Pacific time conversion unnecessary
-    # flights["ScheduledDepTimePacific"] = flights["ScheduledDepTimeUTC"].dt.tz_convert(
-    #     "America/Los_Angeles"
-    # )
-    # flights["ScheduledDepDatePacific"] = flights["ScheduledDepTimePacific"].dt.date
-    # flights["ScheduledDepHourPacific"] = flights["ScheduledDepTimePacific"].dt.hour
 
     flights["ScheduledArrTimeUTC"] = flights.apply(arr_time_to_utc, axis=1)
     flights["ScheduledArrDateUTC"] = flights["ScheduledArrTimeUTC"].dt.date
     flights["ScheduledArrHourUTC"] = flights["ScheduledArrTimeUTC"].dt.hour
-    # flights["ScheduledArrTimePacific"] = flights["ScheduledArrTimeUTC"].dt.tz_convert(
-    #     "America/Los_Angeles"
-    # )
-    # flights["ScheduledArrDatePacific"] = flights["ScheduledArrTimePacific"].dt.date
-    # flights["ScheduledArrHourPacific"] = flights["ScheduledArrTimePacific"].dt.hour
 
     def get_actual_dep_time(row):
         if pd.isna(row['DepDelay']):
